@@ -7,10 +7,12 @@ document.addEventListener('DOMContentLoaded', () => {
     const modal = document.getElementById('calendarModal');
     const monthAndYear = document.getElementById('monthAndYear');
     const calendarGrid = document.getElementById('calendarGrid');
+    const selectionPreview = document.getElementById('selectionPreview');
     const prevMonthBtn = document.getElementById('prevMonthBtn');
     const nextMonthBtn = document.getElementById('nextMonthBtn');
     const confirmBtn = document.getElementById('confirmSelectionBtn');
     const cancelBtn = document.getElementById('cancelSelectionBtn');
+    const todayBtn = document.getElementById('todayBtn');
     const searchInput = document.getElementById('searchInput');
     const clearSearchBtn = document.getElementById('clearSearch');
     const contextMenu = document.getElementById('contextMenu');
@@ -20,9 +22,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     let activeCell = null; // Obecnie aktywna komórka (TD)
     let cellForModal = null; // Komórka, dla której otwarty jest modal
-    let currentYear = new Date().getFullYear();
-    let leavesData = {}; // { employeeName: [{startDate, endDate}] }
-    let selectedDateRange = { start: null, end: null };
+    let currentDate = new Date();
+    let selectedDays = []; // Przechowuje daty jako obiekty Date
+    let lastClickedDay = null; // Przechowuje ostatnio klikniętą datę (obiekt Date)
 
     const undoManager = new UndoManager({
         maxStates: MAX_UNDO_STATES,
@@ -99,50 +101,131 @@ document.addEventListener('DOMContentLoaded', () => {
             <div class="day-name">Czw</div><div class="day-name">Pią</div><div class="day-name">Sob</div>
             <div class="day-name">Nie</div>`;
         monthAndYear.textContent = `${months[month]} ${year}`;
-        
-        const firstDayOfMonth = new Date(year, month, 1).getDay();
-        const daysInMonth = new Date(year, month + 1, 0).getDate();
-        const startingDay = (firstDayOfMonth === 0) ? 6 : firstDayOfMonth - 1;
+        currentDate = new Date(year, month);
 
-        for (let i = 0; i < startingDay; i++) {
-            calendarGrid.appendChild(document.createElement('div')).classList.add('day-cell-calendar', 'empty');
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+
+        const firstDayOfMonth = new Date(year, month, 1);
+        const daysInMonth = new Date(year, month + 1, 0).getDate();
+        const startingDay = (firstDayOfMonth.getDay() === 0) ? 6 : firstDayOfMonth.getDay() - 1;
+
+        // Komórki dla poprzedniego miesiąca
+        const prevMonthDays = new Date(year, month, 0).getDate();
+        for (let i = startingDay - 1; i >= 0; i--) {
+            const dayCell = document.createElement('div');
+            dayCell.classList.add('day-cell-calendar', 'other-month');
+            dayCell.textContent = prevMonthDays - i;
+            calendarGrid.appendChild(dayCell);
         }
 
+        // Komórki dla bieżącego miesiąca
         for (let i = 1; i <= daysInMonth; i++) {
             const dayCell = document.createElement('div');
+            const dayDate = new Date(year, month, i);
+            dayDate.setHours(0, 0, 0, 0);
+
             dayCell.classList.add('day-cell-calendar');
             dayCell.textContent = i;
-            const date = new Date(year, month, i);
-            dayCell.dataset.date = date.toISOString().split('T')[0];
+            dayCell.dataset.date = dayDate.toISOString();
 
-            if (isDateInRange(date, selectedDateRange)) {
-                dayCell.classList.add('selected');
+            if (dayDate.getTime() === today.getTime()) {
+                dayCell.classList.add('today');
             }
+
+            const isSelected = selectedDays.some(d => d.getTime() === dayDate.getTime());
+
+            if (isSelected) {
+                const prevDay = new Date(dayDate.getTime() - 86400000);
+                const nextDay = new Date(dayDate.getTime() + 86400000);
+                const isPrevSelected = selectedDays.some(d => d.getTime() === prevDay.getTime());
+                const isNextSelected = selectedDays.some(d => d.getTime() === nextDay.getTime());
+
+                if (isPrevSelected && isNextSelected) {
+                    dayCell.classList.add('in-range');
+                } else if (isPrevSelected) {
+                    dayCell.classList.add('end-date');
+                } else if (isNextSelected) {
+                    dayCell.classList.add('start-date');
+                } else {
+                    dayCell.classList.add('start-date', 'end-date');
+                }
+            }
+
+            calendarGrid.appendChild(dayCell);
+        }
+
+        // Komórki dla następnego miesiąca
+        const totalCells = startingDay + daysInMonth;
+        const nextMonthDays = (totalCells % 7 === 0) ? 0 : 7 - (totalCells % 7);
+        for (let i = 1; i <= nextMonthDays; i++) {
+            const dayCell = document.createElement('div');
+            dayCell.classList.add('day-cell-calendar', 'other-month');
+            dayCell.textContent = i;
             calendarGrid.appendChild(dayCell);
         }
     };
 
-    const isDateInRange = (date, range) => {
-        if (!range.start) return false;
-        const d = new Date(date.getFullYear(), date.getMonth(), date.getDate());
-        const start = new Date(range.start.getFullYear(), range.start.getMonth(), range.start.getDate());
-        if (!range.end) return d.getTime() === start.getTime();
-        const end = new Date(range.end.getFullYear(), range.end.getMonth(), range.end.getDate());
-        return d >= start && d <= end;
+    const updateSelectionPreview = () => {
+        selectionPreview.textContent = `Wybrano dni: ${selectedDays.length}`;
     };
 
     const openModal = (cell) => {
         cellForModal = cell;
-        selectedDateRange = { start: null, end: null };
         const monthIndex = parseInt(cell.dataset.month, 10);
-        generateCalendar(currentYear, monthIndex);
+        const year = new Date().getFullYear();
+        
+        selectedDays = parseDaysFromString(cellForModal.textContent, year, monthIndex);
+        lastClickedDay = null;
+
+        generateCalendar(year, monthIndex);
+        updateSelectionPreview();
         modal.style.display = 'flex';
     };
 
     const closeModal = () => {
         modal.style.display = 'none';
         cellForModal = null;
-        selectedDateRange = { start: null, end: null };
+        selectedDays = [];
+        lastClickedDay = null;
+    };
+
+    const formatDaysToString = () => {
+        if (selectedDays.length === 0) return '';
+        
+        const daysInMonth = selectedDays.map(d => d.getDate()).sort((a, b) => a - b);
+        
+        const ranges = [];
+        let start = daysInMonth[0];
+        let end = daysInMonth[0];
+
+        for (let i = 1; i < daysInMonth.length; i++) {
+            if (daysInMonth[i] === end + 1) {
+                end = daysInMonth[i];
+            } else {
+                ranges.push(start === end ? `${start}` : `${start}-${end}`);
+                start = end = daysInMonth[i];
+            }
+        }
+        ranges.push(start === end ? `${start}` : `${start}-${end}`);
+        return ranges.join(', ');
+    };
+
+    const parseDaysFromString = (str, year, month) => {
+        if (!str) return [];
+        const dates = new Set();
+        str.split(',').forEach(part => {
+            const trimmedPart = part.trim();
+            if (trimmedPart.includes('-')) {
+                const [start, end] = trimmedPart.split('-').map(Number);
+                for (let i = start; i <= end; i++) {
+                    dates.add(new Date(year, month, i));
+                }
+            } else if (trimmedPart) {
+                dates.add(new Date(year, month, Number(trimmedPart)));
+            }
+        });
+        return Array.from(dates);
     };
 
     // --- LOGIKA POBIERANIA DANYCH I GENEROWANIA TABELI ---
@@ -188,21 +271,16 @@ document.addEventListener('DOMContentLoaded', () => {
         employeeNames.forEach(name => {
             if (!name) return;
             const tr = document.createElement('tr');
-            tr.dataset.employee = name;
             const nameTd = document.createElement('td');
             nameTd.textContent = name;
             nameTd.classList.add('employee-name-cell');
             tr.appendChild(nameTd);
-            months.forEach((_, monthIndex) => {
+            months.forEach((month, monthIndex) => {
                 const monthTd = document.createElement('td');
                 monthTd.classList.add('day-cell');
                 monthTd.dataset.employee = name;
                 monthTd.dataset.month = monthIndex;
                 monthTd.setAttribute('tabindex', '0');
-                // Add a container for leave blocks
-                const blockContainer = document.createElement('div');
-                blockContainer.classList.add('leave-block-container');
-                monthTd.appendChild(blockContainer);
                 tr.appendChild(monthTd);
             });
             leavesTableBody.appendChild(tr);
@@ -214,55 +292,22 @@ document.addEventListener('DOMContentLoaded', () => {
         searchAndHighlight(searchTerm, '#leavesTable', '.employee-name-cell, .day-cell');
     };
 
-    // --- RENDEROWANIE BLOKÓW URLOPÓW ---
-    const renderLeaveBlocks = () => {
-        // Clear existing blocks
-        document.querySelectorAll('.leave-block').forEach(block => block.remove());
-
-        Object.keys(leavesData).forEach(employeeName => {
-            const employeeRow = leavesTableBody.querySelector(`tr[data-employee="${employeeName}"]`);
-            if (!employeeRow) return;
-
-            leavesData[employeeName].forEach(leavePeriod => {
-                const startDate = new Date(leavePeriod.startDate);
-                const endDate = new Date(leavePeriod.endDate);
-
-                const startMonth = startDate.getMonth();
-                const endMonth = endDate.getMonth();
-
-                for (let m = startMonth; m <= endMonth; m++) {
-                    const monthCell = employeeRow.querySelector(`td[data-month="${m}"]`);
-                    if (!monthCell) continue;
-
-                    const blockContainer = monthCell.querySelector('.leave-block-container');
-                    const block = document.createElement('div');
-                    block.classList.add('leave-block');
-                    
-                    const daysInMonth = new Date(currentYear, m + 1, 0).getDate();
-                    const cellWidth = monthCell.offsetWidth;
-
-                    let start = (m === startMonth) ? startDate.getDate() : 1;
-                    let end = (m === endMonth) ? endDate.getDate() : daysInMonth;
-                    
-                    block.style.left = `${((start - 1) / daysInMonth) * 100}%`;
-                    block.style.width = `${((end - start + 1) / daysInMonth) * 100}%`;
-                    block.textContent = `${startDate.getDate()}.${startDate.getMonth()+1} - ${endDate.getDate()}.${endDate.getMonth()+1}`;
-                    
-                    blockContainer.appendChild(block);
-                }
-            });
-        });
-    };
-
     // --- UNDO/REDO ---
     const getCurrentTableState = () => {
-        return JSON.parse(JSON.stringify(leavesData));
+        const state = {};
+        document.querySelectorAll('#leavesTableBody .day-cell').forEach(cell => {
+            const key = `${cell.dataset.employee}-${cell.dataset.month}`;
+            state[key] = cell.textContent;
+        });
+        return state;
     };
 
     const applyTableState = (state) => {
         if (!state) return;
-        leavesData = JSON.parse(JSON.stringify(state));
-        renderLeaveBlocks();
+        document.querySelectorAll('#leavesTableBody .day-cell').forEach(cell => {
+            const key = `${cell.dataset.employee}-${cell.dataset.month}`;
+            cell.textContent = state[key] || '';
+        });
         saveLeavesData();
     };
 
@@ -320,29 +365,12 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    const clearCellContent = (cell) => {
-        if (!cell) return;
-        undoManager.pushState(getCurrentTableState());
-        const employeeName = cell.dataset.employee;
-        const month = parseInt(cell.dataset.month, 10);
-
-        if (leavesData[employeeName]) {
-            // Filtruj urlopy, usuwając te, które w całości lub częściowo przypadają na dany miesiąc
-            leavesData[employeeName] = leavesData[employeeName].filter(period => {
-                const start = new Date(period.startDate);
-                const end = new Date(period.endDate);
-                return start.getMonth() !== month && end.getMonth() !== month;
-            });
-        }
-
-        renderLeaveBlocks();
-        saveLeavesData();
-        undoManager.pushState(getCurrentTableState());
-    };
-
     contextClearCell.addEventListener('click', () => {
         if (activeCell) {
-            clearCellContent(activeCell);
+            undoManager.pushState(getCurrentTableState());
+            activeCell.textContent = '';
+            saveLeavesData();
+            undoManager.pushState(getCurrentTableState());
         }
         contextMenu.classList.remove('visible');
     });
@@ -356,66 +384,58 @@ document.addEventListener('DOMContentLoaded', () => {
 
     calendarGrid.addEventListener('click', (event) => {
         const target = event.target;
-        if (!target.classList.contains('day-cell-calendar') || target.classList.contains('empty')) return;
-        
-        const clickedDate = new Date(target.dataset.date);
+        if (!target.classList.contains('day-cell-calendar') || target.classList.contains('other-month')) return;
 
-        if (!selectedDateRange.start) {
-            // First click: set start date
-            selectedDateRange.start = clickedDate;
-        } else if (!selectedDateRange.end) {
-            // Second click: set end date
-            if (clickedDate < selectedDateRange.start) {
-                selectedDateRange.end = selectedDateRange.start;
-                selectedDateRange.start = clickedDate;
-            } else {
-                selectedDateRange.end = clickedDate;
+        const clickedDate = new Date(target.dataset.date);
+        clickedDate.setHours(0, 0, 0, 0);
+
+        if (event.shiftKey && lastClickedDay) {
+            const start = new Date(Math.min(lastClickedDay, clickedDate));
+            const end = new Date(Math.max(lastClickedDay, clickedDate));
+            
+            for (let d = start; d <= end; d.setDate(d.getDate() + 1)) {
+                const dateCopy = new Date(d);
+                if (!selectedDays.some(sd => sd.getTime() === dateCopy.getTime())) {
+                    selectedDays.push(dateCopy);
+                }
             }
         } else {
-            // Third click: reset and start a new selection
-            selectedDateRange.start = clickedDate;
-            selectedDateRange.end = null;
+            const dayIndex = selectedDays.findIndex(d => d.getTime() === clickedDate.getTime());
+            if (dayIndex > -1) {
+                selectedDays.splice(dayIndex, 1);
+            } else {
+                selectedDays.push(clickedDate);
+            }
         }
-
-        const date = new Date(monthAndYear.textContent.split(' ')[1], months.indexOf(monthAndYear.textContent.split(' ')[0]));
-        generateCalendar(date.getFullYear(), date.getMonth());
+        
+        lastClickedDay = clickedDate;
+        generateCalendar(currentDate.getFullYear(), currentDate.getMonth());
+        updateSelectionPreview();
     });
 
     prevMonthBtn.addEventListener('click', () => {
-        const current = new Date(monthAndYear.textContent.split(' ')[1], months.indexOf(monthAndYear.textContent.split(' ')[0]));
-        current.setMonth(current.getMonth() - 1);
-        generateCalendar(current.getFullYear(), current.getMonth());
+        currentDate.setMonth(currentDate.getMonth() - 1);
+        generateCalendar(currentDate.getFullYear(), currentDate.getMonth());
     });
 
     nextMonthBtn.addEventListener('click', () => {
-        const current = new Date(monthAndYear.textContent.split(' ')[1], months.indexOf(monthAndYear.textContent.split(' ')[0]));
-        current.setMonth(current.getMonth() + 1);
-        generateCalendar(current.getFullYear(), current.getMonth());
+        currentDate.setMonth(currentDate.getMonth() + 1);
+        generateCalendar(currentDate.getFullYear(), currentDate.getMonth());
     });
 
     confirmBtn.addEventListener('click', () => {
-        if (cellForModal && selectedDateRange.start) {
+        if (cellForModal) {
             undoManager.pushState(getCurrentTableState());
-            const employeeName = cellForModal.dataset.employee;
-            if (!leavesData[employeeName]) {
-                leavesData[employeeName] = [];
-            }
-            
-            // If only start is selected, make it a single-day leave
-            if (!selectedDateRange.end) {
-                selectedDateRange.end = selectedDateRange.start;
-            }
-
-            leavesData[employeeName].push({
-                startDate: selectedDateRange.start.toISOString().split('T')[0],
-                endDate: selectedDateRange.end.toISOString().split('T')[0]
-            });
-
-            renderLeaveBlocks();
+            cellForModal.textContent = formatDaysToString();
             saveLeavesData();
             undoManager.pushState(getCurrentTableState());
         }
         closeModal();
+    });
+
+    todayBtn.addEventListener('click', () => {
+        const today = new Date();
+        generateCalendar(today.getFullYear(), today.getMonth());
     });
 
     cancelBtn.addEventListener('click', closeModal);
@@ -459,7 +479,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (event.key === 'Delete' || event.key === 'Backspace') {
             event.preventDefault();
-            clearCellContent(activeCell);
+            undoManager.pushState(getCurrentTableState());
+            activeCell.textContent = '';
+            saveLeavesData();
+            undoManager.pushState(getCurrentTableState());
             return;
         }
 
@@ -504,6 +527,20 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- FIRESTORE SAVE AND LOAD ---
     const saveLeavesData = async () => {
+        const leavesData = {};
+        document.querySelectorAll('#leavesTableBody tr').forEach(row => {
+            const employeeName = row.cells[0].textContent;
+            if (employeeName) {
+                leavesData[employeeName] = {};
+                Array.from(row.cells).slice(1).forEach(cell => {
+                    if (cell.textContent.trim() !== '') {
+                        const monthIndex = cell.dataset.month;
+                        leavesData[employeeName][monthIndex] = cell.textContent.trim();
+                    }
+                });
+            }
+        });
+
         try {
             await db.collection("leaves").doc("mainLeaves").set({ leavesData });
             window.showToast('Zapisano urlopy w Firestore!', 2000);
@@ -517,57 +554,25 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             const docRef = db.collection("leaves").doc("mainLeaves");
             const doc = await docRef.get();
-            if (doc.exists && doc.data().leavesData) {
-                const rawData = doc.data().leavesData;
-                let needsMigration = false;
-
-                // Sprawdzenie i migracja danych
-                Object.keys(rawData).forEach(employeeName => {
-                    if (rawData[employeeName] && !Array.isArray(rawData[employeeName])) {
-                        needsMigration = true;
-                        const newEmployeeLeaves = [];
-                        const oldEmployeeData = rawData[employeeName];
-                        Object.keys(oldEmployeeData).forEach(monthIndex => {
-                            const month = parseInt(monthIndex, 10);
-                            const year = new Date().getFullYear();
-                            const daysStr = oldEmployeeData[monthIndex];
-                            
-                            daysStr.split(',').forEach(part => {
-                                const trimmedPart = part.trim();
-                                if (trimmedPart.includes('-')) {
-                                    const [startDay, endDay] = trimmedPart.split('-').map(Number);
-                                    newEmployeeLeaves.push({
-                                        startDate: new Date(year, month, startDay).toISOString().split('T')[0],
-                                        endDate: new Date(year, month, endDay).toISOString().split('T')[0]
-                                    });
-                                } else if (trimmedPart) {
-                                    const day = Number(trimmedPart);
-                                    newEmployeeLeaves.push({
-                                        startDate: new Date(year, month, day).toISOString().split('T')[0],
-                                        endDate: new Date(year, month, day).toISOString().split('T')[0]
-                                    });
+            if (doc.exists) {
+                const data = doc.data().leavesData;
+                if (data) {
+                    Object.keys(data).forEach(employeeName => {
+                        const row = Array.from(leavesTableBody.querySelectorAll('tr')).find(r => r.cells[0].textContent === employeeName);
+                        if (row) {
+                            Object.keys(data[employeeName]).forEach(monthIndex => {
+                                const cell = row.cells[parseInt(monthIndex) + 1];
+                                if (cell) {
+                                    cell.textContent = data[employeeName][monthIndex];
                                 }
                             });
-                        });
-                        rawData[employeeName] = newEmployeeLeaves;
-                    }
-                });
-
-                leavesData = rawData;
-
-                if (needsMigration) {
-                    console.log("Wykryto stary format danych, przeprowadzono migrację. Zapisywanie nowego formatu...");
-                    await saveLeavesData(); // Zapisz zmigrowane dane
+                        }
+                    });
                 }
-
-                renderLeaveBlocks();
-            } else {
-                leavesData = {};
             }
         } catch (error) {
             console.error("Błąd ładowania danych o urlopach z Firestore:", error);
             window.showToast("Błąd ładowania urlopów.", 5000);
-            leavesData = {};
         }
     };
 
