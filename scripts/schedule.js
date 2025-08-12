@@ -92,9 +92,16 @@ const Schedule = (() => {
                         cellState = { isSplit: true, content1: parts[0], content2: parts[1] };
                     } else if (cellState.isSplit) {
                         const isFirstDiv = element === parentCell.querySelector('div:first-child');
-                        if (isFirstDiv) cellState.content1 = newText;
-                        else cellState.content2 = newText;
-                        if (!cellState.content1 && !cellState.content2) cellState = {};
+                        if (isFirstDiv) {
+                            cellState.content1 = newText;
+                        } else {
+                            cellState.content2 = newText;
+                        }
+                        // Jeśli obie części są puste, usuń isSplit i wyczyść cellState
+                        if (!cellState.content1 && !cellState.content2) {
+                            delete cellState.isSplit;
+                            cellState = {}; // Resetuj cellState do pustego obiektu
+                        }
                     } else {
                         cellState = { content: newText };
                     }
@@ -223,7 +230,7 @@ const Schedule = (() => {
                 const employeeIndex = cell.dataset.employeeIndex;
                 const cellState = appState.scheduleCells[time]?.[employeeIndex] || {};
                 patientNameInput.value = patientName;
-                startDateInput.value = cellState.treatmentStartDate || new Date().toISOString().split('T')[0];
+                startDateInput.value = cellState.treatmentStartDate || '';
                 extensionDaysInput.value = cellState.treatmentExtensionDays || 0;
                 const calculateEndDate = (startDate, extensionDays) => {
                     let endDate = new Date(startDate);
