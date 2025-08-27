@@ -1,7 +1,8 @@
 const Options = (() => {
     // --- SELEKTORY ELEMENTÓW DOM ---
     let loadingOverlay, employeeListContainer, employeeSearchInput, addEmployeeBtn,
-        detailsPlaceholder, detailsEditForm, employeeNameInput, leaveEntitlementInput,
+        detailsPlaceholder, detailsEditForm, employeeFirstNameInput, employeeLastNameInput,
+        employeeDisplayNameInput, employeeNumberInput, leaveEntitlementInput,
         carriedOverLeaveInput, saveEmployeeBtn, deleteEmployeeBtn;
 
     // --- ZMIENNE STANU APLIKACJI ---
@@ -35,7 +36,7 @@ const Options = (() => {
         }
 
         const sortedEmployees = Object.entries(employees)
-            .map(([index, data]) => ({ index: parseInt(index, 10), name: data.name }))
+            .map(([index, data]) => ({ index: parseInt(index, 10), name: data.displayName || data.name }))
             .sort((a, b) => a.index - b.index);
 
         sortedEmployees.forEach(({ index, name }) => {
@@ -62,7 +63,10 @@ const Options = (() => {
 
         detailsPlaceholder.style.display = 'none';
         detailsEditForm.style.display = 'block';
-        employeeNameInput.value = employee.name;
+        employeeFirstNameInput.value = employee.firstName || '';
+        employeeLastNameInput.value = employee.lastName || '';
+        employeeDisplayNameInput.value = employee.displayName || employee.name;
+        employeeNumberInput.value = employee.employeeNumber || ''; // Nowe pole
         leaveEntitlementInput.value = employee.leaveEntitlement || 26;
         carriedOverLeaveInput.value = employee.carriedOverLeave || 0;
     };
@@ -77,9 +81,10 @@ const Options = (() => {
 
     // --- LOGIKA INTERAKCJI Z FIREBASE ---
     const handleAddEmployee = async () => {
-        const name = prompt("Wpisz imię i nazwisko nowego pracownika:");
-        if (!name || name.trim() === '') {
-            window.showToast("Anulowano. Nazwa nie może być pusta.", 3000);
+        // Zastąpione przez formularz, ale zostawiam logikę dodawania na razie
+        const displayName = prompt("Wpisz nazwę wyświetlaną nowego pracownika:");
+        if (!displayName || displayName.trim() === '') {
+            window.showToast("Anulowano. Nazwa wyświetlana nie może być pusta.", 3000);
             return;
         }
         const entitlement = parseInt(prompt("Podaj wymiar urlopu (np. 26):", "26"), 10);
@@ -95,7 +100,10 @@ const Options = (() => {
             const newIndex = highestIndex + 1;
 
             const newEmployee = {
-                name: name.trim(),
+                displayName: displayName.trim(),
+                firstName: '',
+                lastName: '',
+                employeeNumber: '', // Domyślna wartość dla nowego pracownika
                 leaveEntitlement: entitlement,
                 carriedOverLeave: 0
             };
@@ -122,12 +130,15 @@ const Options = (() => {
         }
 
         const oldEmployee = EmployeeManager.getById(selectedEmployeeIndex);
-        const newName = employeeNameInput.value.trim();
+        const newFirstName = employeeFirstNameInput.value.trim();
+        const newLastName = employeeLastNameInput.value.trim();
+        const newDisplayName = employeeDisplayNameInput.value.trim();
+        const newEmployeeNumber = employeeNumberInput.value.trim(); // Nowe pole
         const newEntitlement = parseInt(leaveEntitlementInput.value, 10);
         const newCarriedOver = parseInt(carriedOverLeaveInput.value, 10);
 
-        if (newName === '') {
-            window.showToast("Nazwa pracownika nie może być pusta.", 3000);
+        if (newDisplayName === '') {
+            window.showToast("Nazwa wyświetlana nie może być pusta.", 3000);
             return;
         }
         if (isNaN(newEntitlement) || isNaN(newCarriedOver)) {
@@ -136,7 +147,10 @@ const Options = (() => {
         }
 
         const updatedEmployee = {
-            name: newName,
+            firstName: newFirstName,
+            lastName: newLastName,
+            displayName: newDisplayName,
+            employeeNumber: newEmployeeNumber, // Nowe pole
             leaveEntitlement: newEntitlement,
             carriedOverLeave: newCarriedOver
         };
@@ -151,14 +165,16 @@ const Options = (() => {
                 });
 
                 // Jeśli nazwa się zmieniła, zaktualizuj klucze w urlopach
-                if (oldEmployee.name !== newName) {
+                // Logika migracji nazwy w urlopach
+                const oldNameKey = oldEmployee.displayName || oldEmployee.name;
+                if (oldNameKey !== newDisplayName) {
                     const leavesRef = db.collection("leaves").doc("mainLeaves");
                     const leavesDoc = await transaction.get(leavesRef);
-                    if (leavesDoc.exists && leavesDoc.data()[oldEmployee.name]) {
+                    if (leavesDoc.exists && leavesDoc.data()[oldNameKey]) {
                         const leavesData = leavesDoc.data();
-                        const employeeLeaveData = leavesData[oldEmployee.name];
-                        delete leavesData[oldEmployee.name];
-                        leavesData[newName] = employeeLeaveData;
+                        const employeeLeaveData = leavesData[oldNameKey];
+                        delete leavesData[oldNameKey];
+                        leavesData[newDisplayName] = employeeLeaveData;
                         transaction.set(leavesRef, leavesData);
                     }
                 }
@@ -178,69 +194,73 @@ const Options = (() => {
     };
     
     const handleDeleteEmployee = async () => {
-        if (selectedEmployeeIndex === null) {
-            window.showToast("Nie wybrano pracownika.", 3000);
-            return;
-        }
-        
+        if (selectedEmployeeIndex === null) return;
+
         const employee = EmployeeManager.getById(selectedEmployeeIndex);
-        const confirmation = confirm(`Czy na pewno chcesz usunąć pracownika "${employee.name}"?\n\nUWAGA: Ta operacja usunie również wszystkie powiązane z nim dane w grafiku i urlopach. Zmiany są nieodwracalne!`);
+        const modal = document.getElementById('deleteConfirmationModal');
+        const employeeNameSpan = document.getElementById('employeeNameToDelete');
+        const confirmationInput = document.getElementById('deleteConfirmationInput');
+        const confirmBtn = document.getElementById('confirmDeleteBtn');
+        const cancelBtn = document.getElementById('cancelDeleteBtn');
 
-        if (!confirmation) return;
+        employeeNameSpan.textContent = employee.displayName || employee.name;
+        modal.style.display = 'flex';
 
-        showLoading(true);
-        try {
-            // Używamy firebase.firestore.FieldValue.delete() do usunięcia pola z obiektu
-            const FieldValue = firebase.firestore.FieldValue;
+        const employeeName = employee.displayName || employee.name;
 
-            await db.runTransaction(async (transaction) => {
-                const scheduleRef = db.collection("schedules").doc("mainSchedule");
-                const leavesRef = db.collection("leaves").doc("mainLeaves");
+        const onConfirm = async () => {
+            closeModal();
+            showLoading(true);
+            try {
+                const FieldValue = firebase.firestore.FieldValue;
+                await db.runTransaction(async (transaction) => {
+                    const scheduleRef = db.collection("schedules").doc("mainSchedule");
+                    const leavesRef = db.collection("leaves").doc("mainLeaves");
+                    const scheduleDoc = await transaction.get(scheduleRef);
+                    const leavesDoc = await transaction.get(leavesRef);
 
-                // --- FAZA ODCZYTU ---
-                // Najpierw odczytujemy wszystkie potrzebne dokumenty.
-                const scheduleDoc = await transaction.get(scheduleRef);
-                const leavesDoc = await transaction.get(leavesRef);
-
-                // --- FAZA ZAPISU ---
-                // Teraz, gdy mamy dane, wykonujemy wszystkie operacje zapisu.
-
-                // 1. Usuń pracownika z obiektu 'employees'
-                transaction.update(scheduleRef, {
-                    [`employees.${selectedEmployeeIndex}`]: FieldValue.delete()
+                    transaction.update(scheduleRef, { [`employees.${selectedEmployeeIndex}`]: FieldValue.delete() });
+                    const scheduleData = scheduleDoc.data();
+                    if (scheduleData && scheduleData.scheduleCells) {
+                        Object.keys(scheduleData.scheduleCells).forEach(time => {
+                            if (scheduleData.scheduleCells[time]?.[selectedEmployeeIndex]) {
+                                transaction.update(scheduleRef, { [`scheduleCells.${time}.${selectedEmployeeIndex}`]: FieldValue.delete() });
+                            }
+                        });
+                    }
+                    if (leavesDoc.exists && leavesDoc.data()[employeeName]) {
+                        transaction.update(leavesRef, { [employeeName]: FieldValue.delete() });
+                    }
                 });
 
-                // 2. Wyczyść dane tego pracownika z grafiku
-                const scheduleData = scheduleDoc.data();
-                if (scheduleData && scheduleData.scheduleCells) {
-                    Object.keys(scheduleData.scheduleCells).forEach(time => {
-                        if (scheduleData.scheduleCells[time]?.[selectedEmployeeIndex]) {
-                            transaction.update(scheduleRef, {
-                                [`scheduleCells.${time}.${selectedEmployeeIndex}`]: FieldValue.delete()
-                            });
-                        }
-                    });
-                }
+                await EmployeeManager.load(); // Wymuś ponowne załadowanie danych
+                renderEmployeeList();
+                resetDetailsPanel();
+                window.showToast("Pracownik usunięty pomyślnie.", 2000);
+            } catch (error) {
+                console.error("Błąd podczas usuwania pracownika:", error);
+                window.showToast("Wystąpił błąd. Spróbuj ponownie.", 5000);
+            } finally {
+                showLoading(false);
+            }
+        };
 
-                // 3. Usuń dane z urlopów
-                if (leavesDoc.exists && leavesDoc.data()[employee.name]) {
-                    transaction.update(leavesRef, {
-                        [employee.name]: FieldValue.delete()
-                    });
-                }
-            });
+        const onInput = () => {
+            confirmBtn.disabled = confirmationInput.value.trim() !== employeeName;
+        };
 
-            await EmployeeManager.load();
-            renderEmployeeList();
-            resetDetailsPanel();
-            window.showToast("Pracownik usunięty pomyślnie.", 2000);
-
-        } catch (error) {
-            console.error("Błąd podczas usuwania pracownika:", error);
-            window.showToast("Wystąpił błąd podczas usuwania pracownika. Spróbuj ponownie.", 5000);
-        } finally {
-            showLoading(false);
-        }
+        const closeModal = () => {
+            modal.style.display = 'none';
+            confirmationInput.value = '';
+            confirmBtn.disabled = true;
+            confirmBtn.removeEventListener('click', onConfirm);
+            cancelBtn.removeEventListener('click', closeModal);
+            confirmationInput.removeEventListener('input', onInput);
+        };
+        
+        confirmBtn.addEventListener('click', onConfirm);
+        cancelBtn.addEventListener('click', closeModal);
+        confirmationInput.addEventListener('input', onInput);
     };
 
     // --- INICJALIZACJA I NASŁUCHIWANIE ZDARZEŃ ---
@@ -252,7 +272,10 @@ const Options = (() => {
         addEmployeeBtn = document.getElementById('addEmployeeBtn');
         detailsPlaceholder = document.getElementById('detailsPlaceholder');
         detailsEditForm = document.getElementById('detailsEditForm');
-        employeeNameInput = document.getElementById('employeeNameInput');
+        employeeFirstNameInput = document.getElementById('employeeFirstNameInput');
+        employeeLastNameInput = document.getElementById('employeeLastNameInput');
+        employeeDisplayNameInput = document.getElementById('employeeDisplayNameInput');
+        employeeNumberInput = document.getElementById('employeeNumberInput'); // Nowe pole
         leaveEntitlementInput = document.getElementById('leaveEntitlementInput');
         carriedOverLeaveInput = document.getElementById('carriedOverLeaveInput');
         saveEmployeeBtn = document.getElementById('saveEmployeeBtn');
@@ -277,7 +300,16 @@ const Options = (() => {
         deleteEmployeeBtn.addEventListener('click', handleDeleteEmployee);
     };
 
+    const destroy = () => {
+        employeeSearchInput.removeEventListener('input', filterEmployees);
+        addEmployeeBtn.removeEventListener('click', handleAddEmployee);
+        saveEmployeeBtn.removeEventListener('click', handleSaveEmployee);
+        deleteEmployeeBtn.removeEventListener('click', handleDeleteEmployee);
+        console.log("Options module destroyed");
+    };
+
     return {
-        init
+        init,
+        destroy
     };
 })();

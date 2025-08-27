@@ -21,6 +21,7 @@ const Shared = (() => {
             const navLinks = [
                 { href: '#schedule', text: 'Grafik', icon: 'fas fa-calendar-alt' },
                 { href: '#leaves', text: 'Urlopy', icon: 'fas fa-plane-departure' },
+                { href: '#changes', text: 'Harmonogram zmian', icon: 'fas fa-exchange-alt' },
                 { href: '#options', text: 'Opcje', icon: 'fas fa-cogs' }
             ];
             
@@ -30,6 +31,12 @@ const Shared = (() => {
             
             const navPanel = document.createElement('div');
             navPanel.className = 'nav-panel';
+
+            const userInfoDiv = document.createElement('div');
+            userInfoDiv.className = 'user-info';
+            userInfoDiv.id = 'navPanelUserInfo'; // Dodaj ID dla łatwiejszej aktualizacji
+            userInfoDiv.textContent = 'Zalogowano jako: Gość'; // Domyślny tekst
+            navPanel.appendChild(userInfoDiv);
             
             const ul = document.createElement('ul');
             navLinks.forEach(link => {
@@ -47,8 +54,27 @@ const Shared = (() => {
 
                 li.appendChild(a);
                 ul.appendChild(li);
+
+                // Ukryj menu po kliknięciu linku
+                a.addEventListener('click', () => {
+                    navPanel.classList.remove('visible');
+                    hamburger.classList.remove('active');
+                });
             });
             navPanel.appendChild(ul);
+
+            // Add logout button in a separate list to push it to the bottom
+            const logoutUl = document.createElement('ul');
+            const logoutLi = document.createElement('li');
+            logoutLi.id = 'logoutBtnContainer';
+            logoutLi.style.display = 'none'; // Initially hidden
+            const logoutA = document.createElement('a');
+            logoutA.href = '#';
+            logoutA.id = 'logoutBtn';
+            logoutA.innerHTML = '<i class="fas fa-sign-out-alt"></i> <span>Wyloguj</span>';
+            logoutLi.appendChild(logoutA);
+            logoutUl.appendChild(logoutLi);
+            navPanel.appendChild(logoutUl); // Dodaj nową listę bezpośrednio do panelu
 
             const footerInfo = document.createElement('div');
             footerInfo.className = 'footer-info';
@@ -145,12 +171,55 @@ const Shared = (() => {
             logoutBtn.addEventListener('click', () => {
                 firebase.auth().signOut().then(() => {
                     window.location.hash = '#login'; // Przekieruj po wylogowaniu
+                    // Explicitly get elements to ensure they are correctly referenced
+                    const currentNavPanel = document.querySelector('.nav-panel');
+                    const currentHamburger = document.querySelector('.hamburger-menu');
+                    if (currentNavPanel) {
+                        currentNavPanel.classList.remove('visible'); // Ukryj menu po wylogowaniu
+                    }
+                    if (currentHamburger) {
+                        currentHamburger.classList.remove('active');
+                    }
                 });
             });
         }
     };
 
+    const updateUserInfo = (userName) => {
+        const userInfoElement = document.getElementById('navPanelUserInfo');
+        if (userInfoElement) {
+            userInfoElement.textContent = `Zalogowano jako: ${userName || 'Gość'}`;
+        }
+    };
+
     return {
-        initialize
+        initialize,
+        updateUserInfo // Eksportuj nową metodę
     };
 })();
+
+window.setSaveStatus = (status) => {
+    const statusElement = document.getElementById('saveStatus');
+    if (!statusElement) return;
+
+    statusElement.classList.remove('saving', 'saved', 'error');
+    statusElement.style.display = 'block';
+
+    switch (status) {
+        case 'saving':
+            statusElement.classList.add('saving');
+            statusElement.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Zapisywanie...';
+            break;
+        case 'saved':
+            statusElement.classList.add('saved');
+            statusElement.innerHTML = '<i class="fas fa-check-circle"></i> Zapisano';
+            setTimeout(() => {
+                statusElement.style.display = 'none';
+            }, 2000);
+            break;
+        case 'error':
+            statusElement.classList.add('error');
+            statusElement.innerHTML = '<i class="fas fa-exclamation-circle"></i> Błąd zapisu';
+            break;
+    }
+};

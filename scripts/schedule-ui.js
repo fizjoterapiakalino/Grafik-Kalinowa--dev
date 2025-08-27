@@ -2,9 +2,45 @@
 
 const ScheduleUI = (() => {
     let _appState = null;
+    let _employeeTooltip = null; // Globalny element tooltipa
+
+    const _createEmployeeTooltip = () => {
+        if (document.getElementById('globalEmployeeTooltip')) {
+            _employeeTooltip = document.getElementById('globalEmployeeTooltip');
+            return;
+        }
+
+        _employeeTooltip = document.createElement('div');
+        _employeeTooltip.id = 'globalEmployeeTooltip';
+        _employeeTooltip.classList.add('employee-tooltip');
+        document.body.appendChild(_employeeTooltip);
+    };
+
+    const _showEmployeeTooltip = (event) => {
+        const th = event.currentTarget;
+        const fullName = th.dataset.fullName;
+        const employeeNumber = th.dataset.employeeNumber;
+
+        let tooltipContent = `<p>${fullName}</p>`;
+        if (employeeNumber) {
+            tooltipContent += `<p class="employee-number-tooltip">Numer: <strong>${employeeNumber}</strong></p>`;
+        }
+        _employeeTooltip.innerHTML = tooltipContent;
+
+        const rect = th.getBoundingClientRect();
+        _employeeTooltip.style.left = `${rect.left + rect.width / 2}px`;
+        _employeeTooltip.style.top = `${rect.top - _employeeTooltip.offsetHeight - 10}px`; // 10px odstępu od góry nagłówka
+        _employeeTooltip.style.transform = 'translateX(-50%)';
+        _employeeTooltip.style.display = 'block';
+    };
+
+    const _hideEmployeeTooltip = () => {
+        _employeeTooltip.style.display = 'none';
+    };
 
     const initialize = (appState) => {
         _appState = appState;
+        _createEmployeeTooltip(); // Utwórz globalny tooltip przy inicjalizacji
     };
 
     const getElementText = (element) => {
@@ -71,8 +107,15 @@ const ScheduleUI = (() => {
             cell.style.backgroundColor = (getElementText(cell).trim() !== '') ? AppConfig.schedule.contentCellColor : AppConfig.schedule.defaultCellColor;
         }
 
-        if (cellObj.treatmentEndDate) {
-            const today = new Date().toISOString().split('T')[0];
+        const today = new Date().toISOString().split('T')[0];
+        if (cellObj.isSplit) {
+            if (cellObj.treatmentData1?.endDate && cellObj.treatmentData1.endDate <= today) {
+                cell.children[0]?.classList.add('treatment-end-marker');
+            }
+            if (cellObj.treatmentData2?.endDate && cellObj.treatmentData2.endDate <= today) {
+                cell.children[1]?.classList.add('treatment-end-marker');
+            }
+        } else if (cellObj.treatmentEndDate) {
             if (cellObj.treatmentEndDate <= today) {
                 cell.classList.add('treatment-end-marker');
             }
@@ -88,20 +131,49 @@ const ScheduleUI = (() => {
     const renderTable = () => {
         const tableHeaderRow = document.getElementById('tableHeaderRow');
         const tbody = document.getElementById('mainScheduleTable').querySelector('tbody');
-        const employees = EmployeeManager.getAll();
+        const mainTable = document.getElementById('mainScheduleTable');
         tableHeaderRow.innerHTML = '<th>Godz.</th>';
-        const employeeIndices = Object.keys(employees).sort((a, b) => parseInt(a) - parseInt(b));
+        tbody.innerHTML = '';
+
+        let employeeIndices = [];
+        let isSingleUserView = false;
+
+        const currentUser = firebase.auth().currentUser;
+        if (currentUser) {
+            const employee = EmployeeManager.getEmployeeByUid(currentUser.uid);
+            if (employee) {
+                employeeIndices.push(employee.id);
+                isSingleUserView = true;
+            }
+        }
+
+        if (!isSingleUserView) {
+            const allEmployees = EmployeeManager.getAll();
+            employeeIndices = Object.keys(allEmployees).sort((a, b) => parseInt(a) - parseInt(b));
+        }
+        
+        mainTable.classList.toggle('single-user-view', isSingleUserView);
 
         for (const i of employeeIndices) {
             const th = document.createElement('th');
-            const headerText = employees[i]?.name || `Pracownik ${parseInt(i) + 1}`;
-            th.textContent = capitalizeFirstLetter(headerText);
+            const employeeData = EmployeeManager.getById(i);
+            const displayName = employeeData?.displayName || employeeData?.name || `Pracownik ${parseInt(i) + 1}`;
+            const fullName = EmployeeManager.getFullNameById(i);
+            const employeeNumber = employeeData?.employeeNumber || '';
+
             th.setAttribute('data-employee-index', i);
             th.setAttribute('tabindex', '0');
+            th.classList.add('employee-header'); // Dodaj klasę dla identyfikacji
+            th.innerHTML = `<span>${capitalizeFirstLetter(displayName)}</span>`;
+            th.dataset.fullName = fullName;
+            th.dataset.employeeNumber = employeeNumber;
             tableHeaderRow.appendChild(th);
+
+            // Dodaj event listenery dla nowego podejścia do tooltipa
+            th.addEventListener('mouseover', _showEmployeeTooltip);
+            th.addEventListener('mouseout', _hideEmployeeTooltip);
         }
 
-        tbody.innerHTML = '';
         for (let hour = AppConfig.schedule.startHour; hour <= AppConfig.schedule.endHour; hour++) {
             for (let minute = 0; minute < 60; minute += 30) {
                 if (hour === AppConfig.schedule.endHour && minute === 30) continue;
@@ -121,6 +193,34 @@ const ScheduleUI = (() => {
             }
         }
         refreshAllRowHeights();
+
+        // Usuń ewentualny stary interwał, aby uniknąć duplikatów
+        if (window.currentTimeInterval) {
+            clearInterval(window.currentTimeInterval);
+        }
+
+        // Ustaw nowy interwał, który będzie aktualizował podświetlenie
+        window.currentTimeInterval = setInterval(() => {
+            const now = new Date();
+            const hours = now.getHours();
+            const minutes = now.getMinutes();
+            const roundedMinutes = minutes < 30 ? '00' : '30';
+            const timeString = `${hours}:${roundedMinutes}`;
+
+            // Usuń podświetlenie ze wszystkich wierszy
+            document.querySelectorAll('#mainScheduleTable tbody tr.current-time-row').forEach(row => {
+                row.classList.remove('current-time-row');
+            });
+
+            // Znajdź i podświetl nowy, właściwy wiersz
+            const allTimeCells = document.querySelectorAll('#mainScheduleTable tbody td:first-child');
+            for (const cell of allTimeCells) {
+                if (cell.textContent.trim() === timeString) {
+                    cell.parentElement.classList.add('current-time-row');
+                    break;
+                }
+            }
+        }, 60000); // Uruchamiaj co minutę
     };
 
     return {

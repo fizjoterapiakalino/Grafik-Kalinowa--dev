@@ -1,9 +1,103 @@
 const Leaves = (() => {
     // --- SELEKTORY I ZMIENNE GLOBALNE ---
     let loadingOverlay, leavesTableBody, leavesHeaderRow, searchInput, clearSearchBtn,
-        monthlyViewBtn, summaryViewBtn, careViewBtn, monthlyViewContainer, careViewContainer;
+        monthlyViewBtn, summaryViewBtn, careViewBtn, monthlyViewContainer, careViewContainer,
+        clearFiltersBtn, leavesFilterContainer;
+    
+    const months = ["Styczeń", "Luty", "Marzec", "Kwiecień", "Maj", "Czerwiec", "Lipiec", "Sierpień", "Wrzesień", "Październik", "Listopad", "Grudzień"];
 
     let currentYear = new Date().getUTCFullYear();
+    let activeCell = null;
+    let activeFilters = new Set();
+
+    // --- Nazwane funkcje obsługi zdarzeń ---
+    const _handleAppSearch = (e) => {
+        const { searchTerm } = e.detail;
+        const lowerCaseSearchTerm = searchTerm.toLowerCase();
+        document.querySelectorAll('#leavesTableBody tr').forEach(row => {
+            row.style.display = row.dataset.employee.toLowerCase().includes(lowerCaseSearchTerm) ? '' : 'none';
+        });
+    };
+
+    const _handleTableDblClick = (event) => {
+        const targetCell = event.target.closest('.day-cell');
+        openCalendarForCell(targetCell);
+    };
+
+    const _handleTableClick = (event) => {
+        const target = event.target.closest('.day-cell');
+        if (target) {
+            setActiveCell(target);
+        } else {
+            setActiveCell(null);
+        }
+    };
+
+    const setActiveCell = (cell) => {
+        if (activeCell) {
+            activeCell.classList.remove('active-cell');
+        }
+        activeCell = cell;
+        if (activeCell) {
+            activeCell.classList.add('active-cell');
+            activeCell.focus();
+        }
+    };
+
+    const _handleArrowNavigation = (key) => {
+        if (!activeCell) return;
+
+        let nextElement = null;
+        const currentRow = activeCell.closest('tr');
+        const currentIndexInRow = Array.from(currentRow.cells).indexOf(activeCell);
+
+        switch (key) {
+            case 'ArrowRight':
+                nextElement = currentRow.cells[currentIndexInRow + 1];
+                break;
+            case 'ArrowLeft':
+                if (currentIndexInRow > 1) { // Blokada przed przejściem na komórkę z nazwą pracownika
+                    nextElement = currentRow.cells[currentIndexInRow - 1];
+                }
+                break;
+            case 'ArrowDown':
+                const nextRow = currentRow.nextElementSibling;
+                if (nextRow) {
+                    nextElement = nextRow.cells[currentIndexInRow];
+                }
+                break;
+            case 'ArrowUp':
+                const prevRow = currentRow.previousElementSibling;
+                if (prevRow) {
+                    nextElement = prevRow.cells[currentIndexInRow];
+                }
+                break;
+        }
+
+        if (nextElement && nextElement.classList.contains('day-cell')) {
+            setActiveCell(nextElement);
+        }
+    };
+
+    const _handleKeyDown = (event) => {
+        if (!activeCell) return;
+
+        if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(event.key)) {
+            event.preventDefault();
+            _handleArrowNavigation(event.key);
+        }
+
+        if (event.key === 'Enter') {
+            event.preventDefault();
+            openCalendarForCell(activeCell);
+        }
+
+        if (event.key === 'Delete' || event.key === 'Backspace') {
+            event.preventDefault();
+            clearCellLeaves(activeCell);
+        }
+    };
+
 
     // --- FUNKCJE POMOCNICZE UTC ---
     const toUTCDate = (dateString) => {
@@ -13,18 +107,49 @@ const Leaves = (() => {
 
     // --- GŁÓWNA LOGIKA APLIKACJI ---
 
-    const generateLegend = () => {
+    const generateLegendAndFilters = () => {
         const legendContainer = document.getElementById('leavesLegend');
-        legendContainer.innerHTML = '<h4>Legenda:</h4>';
+        if (!legendContainer) return;
+        legendContainer.innerHTML = '<strong>Filtruj wg typu:</strong>';
         const leaveTypeSelect = document.getElementById('leaveTypeSelect');
         
+        // Jeśli activeFilters jest puste, zainicjuj je wszystkimi typami urlopów
+        if (activeFilters.size === 0) {
+            Array.from(leaveTypeSelect.options).forEach(option => {
+                activeFilters.add(option.value);
+            });
+        }
+
+        legendContainer.innerHTML = '<strong>Filtruj wg typu:</strong>'; // Wyczyść kontener przed ponownym generowaniem
+
         Array.from(leaveTypeSelect.options).forEach(option => {
             const key = option.value;
             const color = AppConfig.leaves.leaveTypeColors[key] || AppConfig.leaves.leaveTypeColors.default;
-            const legendItem = document.createElement('div');
-            legendItem.className = 'legend-item';
-            legendItem.innerHTML = `<span class="legend-color-box" style="background-color: ${color};"></span> ${option.textContent}`;
-            legendContainer.appendChild(legendItem);
+            
+            const filterItem = document.createElement('label');
+            filterItem.className = 'legend-item filter-label';
+            filterItem.innerHTML = `
+                <input type="checkbox" class="filter-checkbox" value="${key}" ${activeFilters.has(key) ? 'checked' : ''}>
+                <span class="legend-color-box" style="background-color: ${color};"></span> ${option.textContent}
+            `;
+            legendContainer.appendChild(filterItem);
+        });
+
+        // Usuń poprzednie nasłuchiwacze, aby uniknąć wielokrotnego przypisania
+        const oldLegendContainer = legendContainer.cloneNode(true);
+        legendContainer.parentNode.replaceChild(oldLegendContainer, legendContainer);
+        const newLegendContainer = document.getElementById('leavesLegend');
+
+        newLegendContainer.addEventListener('change', async (e) => {
+            if (e.target.classList.contains('filter-checkbox')) {
+                if (e.target.checked) {
+                    activeFilters.add(e.target.value);
+                } else {
+                    activeFilters.delete(e.target.value);
+                }
+                const allLeaves = await getAllLeavesData();
+                renderAllEmployeeLeaves(allLeaves);
+            }
         });
     };
 
@@ -40,6 +165,7 @@ const Leaves = (() => {
         careViewBtn = document.getElementById('careViewBtn');
         monthlyViewContainer = document.getElementById('leavesTable');
         careViewContainer = document.getElementById('careViewContainer');
+        leavesFilterContainer = document.getElementById('leavesFilterContainer'); // Inicjalizuj tutaj
 
         // Inicjalizacja modułów zależnych
         CalendarModal.init();
@@ -47,9 +173,10 @@ const Leaves = (() => {
         if (loadingOverlay) loadingOverlay.style.display = 'flex';
         try {
             await EmployeeManager.load();
-            setupEventListeners();
-            await showMonthlyView();
-            generateLegend();
+            generateLegendAndFilters(); // Generuj filtry przed pierwszym renderowaniem
+            clearFiltersBtn = document.getElementById('clearFiltersBtn'); // Inicjalizuj tutaj po wygenerowaniu filtrów
+            setupEventListeners(); // Ustaw nasłuchiwacze po wygenerowaniu filtrów
+            await showMonthlyView(); // Wywołaj showMonthlyView po załadowaniu filtrów
 
             // --- Inicjalizacja Menu Kontekstowego ---
             const contextMenuItems = [
@@ -64,6 +191,23 @@ const Leaves = (() => {
         } finally {
             if (loadingOverlay) hideLoadingOverlay(loadingOverlay);
         }
+    };
+
+    const destroy = () => {
+        monthlyViewBtn.removeEventListener('click', showMonthlyView);
+        summaryViewBtn.removeEventListener('click', showSummaryView);
+        careViewBtn.removeEventListener('click', showCareView);
+        leavesTableBody.removeEventListener('dblclick', _handleTableDblClick);
+        leavesTableBody.removeEventListener('click', _handleTableClick);
+        document.removeEventListener('keydown', _handleKeyDown);
+        document.removeEventListener('app:search', _handleAppSearch);
+        clearFiltersBtn.removeEventListener('click', handleClearFilters);
+
+        if (window.destroyContextMenu) {
+            window.destroyContextMenu('contextMenu');
+        }
+        activeCell = null;
+        console.log("Leaves module destroyed");
     };
 
     const openCalendarForCell = async (cell) => {
@@ -88,19 +232,20 @@ const Leaves = (() => {
         monthlyViewBtn.addEventListener('click', showMonthlyView);
         summaryViewBtn.addEventListener('click', showSummaryView);
         careViewBtn.addEventListener('click', showCareView);
-        
-        leavesTableBody.addEventListener('dblclick', (event) => {
-            const targetCell = event.target.closest('.day-cell');
-            openCalendarForCell(targetCell);
-        });
+        leavesTableBody.addEventListener('dblclick', _handleTableDblClick);
+        leavesTableBody.addEventListener('click', _handleTableClick);
+        document.addEventListener('keydown', _handleKeyDown);
+        document.addEventListener('app:search', _handleAppSearch);
+        if (clearFiltersBtn) { // Dodaj sprawdzenie istnienia elementu
+            clearFiltersBtn.addEventListener('click', handleClearFilters);
+        }
+    };
 
-        document.addEventListener('app:search', (e) => {
-            const { searchTerm } = e.detail;
-            const lowerCaseSearchTerm = searchTerm.toLowerCase();
-            document.querySelectorAll('#leavesTableBody tr').forEach(row => {
-                row.style.display = row.dataset.employee.toLowerCase().includes(lowerCaseSearchTerm) ? '' : 'none';
-            });
-        });
+    const handleClearFilters = async () => {
+        activeFilters.clear(); // Wyczyść wszystkie aktywne filtry
+        generateLegendAndFilters(); // Ponownie wygeneruj legendę, aby odznaczyć wszystkie checkboxy
+        const allLeaves = await getAllLeavesData();
+        renderAllEmployeeLeaves(allLeaves);
     };
 
     const showMonthlyView = async () => {
@@ -110,6 +255,7 @@ const Leaves = (() => {
 
         monthlyViewContainer.style.display = '';
         careViewContainer.style.display = 'none';
+        leavesFilterContainer.style.display = 'flex'; // Pokaż kontener filtrów
 
         generateTableHeaders();
         const employees = EmployeeManager.getAll();
@@ -125,6 +271,7 @@ const Leaves = (() => {
         
         monthlyViewContainer.style.display = ''; // Podsumowanie roczne używa tej samej tabeli
         careViewContainer.style.display = 'none';
+        leavesFilterContainer.style.display = 'none'; // Ukryj kontener filtrów
 
         const allLeaves = await getAllLeavesData();
         LeavesSummary.render(leavesHeaderRow, leavesTableBody, allLeaves);
@@ -137,6 +284,7 @@ const Leaves = (() => {
 
         monthlyViewContainer.style.display = 'none';
         careViewContainer.style.display = 'block';
+        leavesFilterContainer.style.display = 'none'; // Ukryj kontener filtrów
 
         const allLeaves = await getAllLeavesData();
         LeavesCareSummary.render(careViewContainer, allLeaves);
@@ -153,7 +301,7 @@ const Leaves = (() => {
 
     const generateTableRows = (employees) => {
         leavesTableBody.innerHTML = '';
-        const sortedEmployeeNames = Object.values(employees).map(emp => emp.name).filter(Boolean).sort();
+        const sortedEmployeeNames = Object.values(employees).map(emp => emp.displayName || emp.name).filter(Boolean).sort();
         sortedEmployeeNames.forEach(name => {
             const tr = document.createElement('tr');
             tr.dataset.employee = name;
@@ -205,7 +353,9 @@ const Leaves = (() => {
         if (!employeeRow) return;
         employeeRow.querySelectorAll('.day-cell').forEach(cell => { cell.innerHTML = ''; });
 
-        leaves.forEach(leave => {
+        const filteredLeaves = leaves.filter(leave => activeFilters.has(leave.type || 'vacation'));
+
+        filteredLeaves.forEach(leave => {
             if (!leave.id || !leave.startDate || !leave.endDate) return;
             
             const bgColor = AppConfig.leaves.leaveTypeColors[leave.type] || AppConfig.leaves.leaveTypeColors.default;
@@ -222,6 +372,8 @@ const Leaves = (() => {
                     const monthEnd = new Date(Math.min(end, Date.UTC(currentYear, currentMonth + 1, 0)));
                     const div = document.createElement('div');
                     div.classList.add('leave-block');
+                    const leaveTypeName = document.querySelector(`#leaveTypeSelect option[value="${leave.type || 'vacation'}"]`).textContent;
+                    div.setAttribute('title', leaveTypeName);
                     div.style.backgroundColor = bgColor;
                     let text = '';
                     if (start < monthStart) text += `<span class="arrow">←</span> `;
@@ -256,6 +408,7 @@ const Leaves = (() => {
     };
 
     return {
-        init
+        init,
+        destroy
     };
 })();

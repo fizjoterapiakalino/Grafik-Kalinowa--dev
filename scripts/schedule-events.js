@@ -1,13 +1,61 @@
-// scripts/schedule-events.js
-
 const ScheduleEvents = (() => {
     let _dependencies = {};
-    
-    let mainTable, searchInput, clearSearchButton;
-
-    let draggedCell = null;
+    let mainTable;
     let activeCell = null;
+    let draggedCell = null;
 
+    // --- Nazwane funkcje obsługi zdarzeń ---
+
+    const _handleMainTableClick = (event) => {
+        const target = event.target.closest('td.editable-cell, div[tabindex="0"]');
+        if (target) {
+            if (activeCell === target && target.getAttribute('contenteditable') === 'true') return;
+            if (activeCell && activeCell.getAttribute('contenteditable') === 'true') _dependencies.exitEditMode(activeCell);
+            setActiveCell(target);
+        } else {
+            if (activeCell && activeCell.getAttribute('contenteditable') === 'true') _dependencies.exitEditMode(activeCell);
+            setActiveCell(null);
+        }
+    };
+
+    const _handleMainTableDblClick = (event) => {
+        const target = event.target.closest('td.editable-cell, div[tabindex="0"]');
+        if (target) _dependencies.enterEditMode(target);
+    };
+
+    const _handleDocumentClick = (event) => {
+        if (!event.target.closest('.active-cell') && !event.target.closest('#contextMenu')) {
+            if (activeCell && activeCell.getAttribute('contenteditable') === 'true') {
+                _dependencies.exitEditMode(activeCell);
+            }
+            setActiveCell(null);
+        }
+    };
+    
+    const _handleDragLeave = (event) => {
+        const target = event.target.closest('.drag-over-target');
+        if(target) target.classList.remove('drag-over-target');
+    };
+
+    const _handleAppSearch = (e) => {
+        const { searchTerm } = e.detail;
+        const searchAndHighlight = (term, tableSelector, cellSelector) => {
+            const table = document.querySelector(tableSelector);
+            if (!table) return;
+            table.querySelectorAll(cellSelector).forEach(cell => {
+                const cellText = cell.textContent.toLowerCase();
+                if (term && cellText.includes(term.toLowerCase())) {
+                    cell.classList.add('search-highlight');
+                } else {
+                    cell.classList.remove('search-highlight');
+                }
+            });
+        };
+        searchAndHighlight(searchTerm, '#mainScheduleTable', 'td.editable-cell, th');
+    };
+
+    // (reszta nazwanych funkcji, które już istnieją, jak _handleKeyDown, _handleDragStart, etc.)
+    // ... (istniejący kod od clearDuplicateHighlights do _handleKeyDown) ...
     const clearDuplicateHighlights = () => {
         document.querySelectorAll('.duplicate-highlight').forEach(el => {
             el.classList.remove('duplicate-highlight');
@@ -47,6 +95,12 @@ const ScheduleEvents = (() => {
         
         activeCell = cell;
 
+        // Dezaktywuj wszystkie przyciski akcji
+        document.querySelectorAll('.schedule-action-buttons .action-icon-btn').forEach(btn => {
+            btn.classList.remove('active');
+            btn.disabled = true;
+        });
+
         if (activeCell) {
             activeCell.classList.add('active-cell');
             if (activeCell.tagName === 'DIV') {
@@ -54,6 +108,20 @@ const ScheduleEvents = (() => {
             }
             activeCell.focus();
             highlightDuplicates(_dependencies.ui.getElementText(activeCell));
+
+            // Aktywuj przyciski, gdy komórka jest zaznaczona
+            document.querySelectorAll('.schedule-action-buttons .action-icon-btn').forEach(btn => {
+                btn.classList.add('active');
+                btn.disabled = false;
+            });
+
+            // Specyficzne warunki aktywacji dla niektórych przycisków
+            const patientInfoBtn = document.getElementById('btnPatientInfo');
+            if (patientInfoBtn) {
+                const hasPatientInfo = !activeCell.classList.contains('break-cell') && _dependencies.ui.getElementText(activeCell).trim() !== '';
+                patientInfoBtn.classList.toggle('active', hasPatientInfo);
+                patientInfoBtn.disabled = !hasPatientInfo;
+            }
         }
     };
 
@@ -193,10 +261,20 @@ const ScheduleEvents = (() => {
             event.preventDefault();
             const cellToClear = activeCell.closest('td.editable-cell');
             if (cellToClear) {
+                const time = cellToClear.dataset.time;
+                const employeeIndex = cellToClear.dataset.employeeIndex;
                 _dependencies.updateCellState(cellToClear, state => {
                     Object.keys(state).forEach(key => delete state[key]);
                     window.showToast('Wyczyszczono komórkę');
                 });
+                const newCell = document.querySelector(`td[data-time="${time}"][data-employee-index="${employeeIndex}"]`);
+                if (newCell) {
+                    const focusTarget = newCell.querySelector('div[tabindex="0"]') || newCell;
+                    setActiveCell(focusTarget);
+                    focusTarget.focus();
+                } else {
+                    setActiveCell(null);
+                }
             }
             return;
         }
@@ -219,83 +297,118 @@ const ScheduleEvents = (() => {
         }
     };
 
+
     const initialize = (deps) => {
         _dependencies = deps;
-
-        // Initialize DOM elements here
         mainTable = document.getElementById('mainScheduleTable');
-        searchInput = document.getElementById('searchInput');
-        clearSearchButton = document.getElementById('clearSearchButton');
 
-        mainTable.addEventListener('click', (event) => {
-            const target = event.target.closest('td.editable-cell, div[tabindex="0"]');
-            if (target) {
-                if (activeCell === target && target.getAttribute('contenteditable') === 'true') return;
-                if (activeCell && activeCell.getAttribute('contenteditable') === 'true') _dependencies.exitEditMode(activeCell);
-                setActiveCell(target);
-            } else {
-                if (activeCell && activeCell.getAttribute('contenteditable') === 'true') _dependencies.exitEditMode(activeCell);
-                setActiveCell(null);
-            }
-        });
+        if (!mainTable) {
+            console.error("ScheduleEvents.initialize: mainScheduleTable not found. Aborting initialization.");
+            return;
+        }
 
-        mainTable.addEventListener('dblclick', (event) => {
-            const target = event.target.closest('td.editable-cell, div[tabindex="0"]');
-            if (target) _dependencies.enterEditMode(target);
-        });
+        mainTable.addEventListener('click', _handleMainTableClick);
+        mainTable.addEventListener('dblclick', _handleMainTableDblClick);
+        document.addEventListener('click', _handleDocumentClick);
 
-        document.addEventListener('click', (event) => {
-            if (!event.target.closest('.active-cell')) {
-                 if (activeCell && activeCell.getAttribute('contenteditable') === 'true') {
-                    _dependencies.exitEditMode(activeCell);
-                }
-                setActiveCell(null);
-            }
-        });
-
-        // Drag and Drop events
         mainTable.addEventListener('dragstart', _handleDragStart);
         mainTable.addEventListener('dragover', _handleDragOver);
-        mainTable.addEventListener('dragleave', (event) => event.target.closest('.drag-over-target')?.classList.remove('drag-over-target'));
+        mainTable.addEventListener('dragleave', _handleDragLeave);
         mainTable.addEventListener('drop', _handleDrop);
         mainTable.addEventListener('dragend', _handleDragEnd);
         
-        // Keyboard events
         document.addEventListener('keydown', _handleKeyDown);
+        document.addEventListener('app:search', _handleAppSearch);
 
-        // Search events
-        document.addEventListener('app:search', (e) => {
-            const { searchTerm } = e.detail;
-            // A simple search and highlight function needs to be defined or available in scope
-            const searchAndHighlight = (term, tableSelector, cellSelector) => {
-                const table = document.querySelector(tableSelector);
-                if (!table) return;
-                table.querySelectorAll(cellSelector).forEach(cell => {
-                    const cellText = cell.textContent.toLowerCase();
-                    if (term && cellText.includes(term.toLowerCase())) {
-                        cell.classList.add('search-highlight');
-                    } else {
-                        cell.classList.remove('search-highlight');
-                    }
-                });
-            };
-            searchAndHighlight(searchTerm, '#mainScheduleTable', 'td.editable-cell, th');
-        });
-
-        // Context Menu
         const contextMenuItems = [
-            { id: 'contextPatientInfo', class: 'info', condition: cell => !cell.classList.contains('break-cell') && _dependencies.ui.getElementText(cell).trim() !== '', action: cell => _dependencies.openPatientInfoModal(cell) },
-            { id: 'contextAddBreak', action: cell => _dependencies.updateCellState(cell, state => { state.isBreak = true; window.showToast('Dodano przerwę'); }) },
-            { id: 'contextRemoveBreak', class: 'danger', condition: cell => cell.classList.contains('break-cell'), action: cell => _dependencies.updateCellState(cell, state => { delete state.isBreak; window.showToast('Usunięto przerwę'); }) },
+            { id: 'contextPatientInfo', class: 'info', condition: cell => !cell.classList.contains('break-cell') && _dependencies.ui.getElementText(cell).trim() !== '', action: (cell, event) => _dependencies.openPatientInfoModal(event.target.closest('div[tabindex="0"]') || event.target.closest('td.editable-cell')) },
+            { id: 'contextAddBreak', action: cell => {
+                if (_dependencies.ui.getElementText(cell).trim() !== '') {
+                    window.showToast('Nie można dodać przerwy do zajętej komórki. Najpierw wyczyść komórkę.', 3000);
+                    return;
+                }
+                _dependencies.updateCellState(cell, state => { state.isBreak = true; window.showToast('Dodano przerwę'); });
+            }},
             { id: 'contextClear', class: 'danger', action: cell => _dependencies.updateCellState(cell, state => { Object.keys(state).forEach(key => delete state[key]); window.showToast('Wyczyszczono komórkę'); }) },
             { id: 'contextSplitCell', action: cell => _dependencies.updateCellState(cell, state => { state.content1 = state.content || ''; state.content2 = ''; delete state.content; state.isSplit = true; window.showToast('Podzielono komórkę'); }) },
             { id: 'contextMassage', action: cell => _dependencies.toggleSpecialStyle(cell, 'isMassage') },
             { id: 'contextPnf', action: cell => _dependencies.toggleSpecialStyle(cell, 'isPnf') }
         ];
         window.initializeContextMenu('contextMenu', 'td.editable-cell', contextMenuItems);
+
+        // Obsługa kliknięć dla nowych przycisków akcji
+        document.getElementById('btnPatientInfo')?.addEventListener('click', () => {
+            if (activeCell && !activeCell.classList.contains('break-cell') && _dependencies.ui.getElementText(activeCell).trim() !== '') {
+                _dependencies.openPatientInfoModal(activeCell);
+            } else {
+                window.showToast('Wybierz komórkę z pacjentem, aby wyświetlić informacje.', 3000);
+            }
+        });
+        document.getElementById('btnSplitCell')?.addEventListener('click', () => {
+            if (activeCell) {
+                _dependencies.updateCellState(activeCell, state => { state.content1 = state.content || ''; state.content2 = ''; delete state.content; state.isSplit = true; window.showToast('Podzielono komórkę'); });
+            } else {
+                window.showToast('Wybierz komórkę do podzielenia.', 3000);
+            }
+        });
+        document.getElementById('btnAddBreak')?.addEventListener('click', () => {
+            if (activeCell) {
+                if (_dependencies.ui.getElementText(activeCell).trim() !== '') {
+                    window.showToast('Nie można dodać przerwy do zajętej komórki. Najpierw wyczyść komórkę.', 3000);
+                    return;
+                }
+                _dependencies.updateCellState(activeCell, state => { state.isBreak = true; window.showToast('Dodano przerwę'); });
+            } else {
+                window.showToast('Wybierz komórkę, aby dodać przerwę.', 3000);
+            }
+        });
+        document.getElementById('btnMassage')?.addEventListener('click', () => {
+            if (activeCell) {
+                _dependencies.toggleSpecialStyle(activeCell, 'isMassage');
+            } else {
+                window.showToast('Wybierz komórkę, aby oznaczyć jako Masaż.', 3000);
+            }
+        });
+        document.getElementById('btnPnf')?.addEventListener('click', () => {
+            if (activeCell) {
+                _dependencies.toggleSpecialStyle(activeCell, 'isPnf');
+            } else {
+                window.showToast('Wybierz komórkę, aby oznaczyć jako PNF.', 3000);
+            }
+        });
+        document.getElementById('btnClearCell')?.addEventListener('click', () => {
+            if (activeCell) {
+                _dependencies.updateCellState(activeCell, state => { Object.keys(state).forEach(key => delete state[key]); window.showToast('Wyczyszczono komórkę'); });
+            } else {
+                window.showToast('Wybierz komórkę do wyczyszczenia.', 3000);
+            }
+        });
+    };
+
+    const destroy = () => {
+        if (mainTable) {
+            mainTable.removeEventListener('click', _handleMainTableClick);
+            mainTable.removeEventListener('dblclick', _handleMainTableDblClick);
+            mainTable.removeEventListener('dragstart', _handleDragStart);
+            mainTable.removeEventListener('dragover', _handleDragOver);
+            mainTable.removeEventListener('dragleave', _handleDragLeave);
+            mainTable.removeEventListener('drop', _handleDrop);
+            mainTable.removeEventListener('dragend', _handleDragEnd);
+        }
+        document.removeEventListener('click', _handleDocumentClick);
+        document.removeEventListener('keydown', _handleKeyDown);
+        document.removeEventListener('app:search', _handleAppSearch);
+        
+        if (window.destroyContextMenu) {
+            window.destroyContextMenu('contextMenu');
+        }
+        
+        activeCell = null;
+        console.log("ScheduleEvents destroyed");
     };
 
     return {
-        initialize
+        initialize,
+        destroy
     };
 })();

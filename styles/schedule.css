@@ -154,7 +154,7 @@ td.current-time-highlight {
     width: 80%; 
     max-width: 500px;
     border-radius: 8px;
-    text-align: center;
+    text-align: left;
     box-shadow: 0 4px 8px 0 rgba(0,0,0,0.2),0 6px 20px 0 rgba(0,0,0,0.19);
 }
 
@@ -184,4 +184,68 @@ td.current-time-highlight {
 #cancelBtn {
     background-color: #f44336;
     color: white;
+}
+
+/* --- Style responsywne --- */
+@media (max-width: 768px) {
+    #mainScheduleTable {
+        min-width: auto;
+        font-size: 12px;
+    }
+
+    #mainScheduleTable th, #mainScheduleTable td {
+        padding: 4px;
+    }
+
+    #mainScheduleTable thead th {
+        top: 50px; /* Dostosuj do wysokości nagłówka w wersji mobilnej */
+    }
+
+    #mainScheduleTable.single-user-view th,
+    #mainScheduleTable.single-user-view td {
+        width: auto;
+        min-width: 150px; /* Zapewnia minimalną czytelność */
+    }
+
+    #mainScheduleTable.single-user-view th:first-child,
+    #mainScheduleTable.single-user-view td:first-child {
+        width: 50px;
+        min-width: 50px;
+    }
+
+    .modal-content {
+        width: 90%;
+        margin: 30% auto;
+    }
+}
+
+#mainScheduleTable tbody tr.current-time-row > td {
+    background-color: #fffde7 !important; /* Jasnożółte tło */
+    font-weight: bold;
+}
+
+/* --- Style dla globalnego tooltipa pracownika --- */
+#globalEmployeeTooltip {
+    display: none;
+    position: absolute;
+    background-color: #333;
+    color: #fff;
+    padding: 8px 12px;
+    border-radius: 4px;
+    white-space: nowrap;
+    z-index: 9999; /* Ustaw bardzo wysoki z-index, aby był nad wszystkimi elementami */
+    font-size: 0.9em;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+    pointer-events: none; /* Zapobiega blokowaniu zdarzeń myszy pod tooltipem */
+}
+
+#globalEmployeeTooltip p {
+    margin: 0;
+    padding: 2px 0;
+}
+
+#globalEmployeeTooltip .employee-number-tooltip {
+    font-size: 1.1em; /* Większa czcionka */
+    font-weight: bold; /* Pogrubiona czcionka */
+    color: #FFD700; /* Kolor dla wyróżnienia */
 }
