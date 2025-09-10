@@ -357,3 +357,28 @@ td.current-time-highlight {
     font-weight: bold; /* Pogrubiona czcionka */
     color: #FFD700; /* Kolor dla wyróżnienia */
 }
+
+/* Style dla ułożenia pól obok siebie w modalu */
+.form-row {
+    display: flex;
+    gap: 20px; /* Odstęp między polami */
+    margin-bottom: 15px;
+}
+
+.form-row .form-group {
+    flex: 1; /* Rozciągnij, aby zajmowały równą przestrzeń */
+    margin-bottom: 0; /* Usuń dolny margines, ponieważ jest już na .form-row */
+}
+
+/* Style dla pola tekstowego Informacje dodatkowe */
+#additionalInfo {
+    width: 100%;
+    box-sizing: border-box; /* Uwzględnij padding i border w szerokości */
+    resize: vertical; /* Pozwól na zmianę rozmiaru tylko w pionie */
+}
+
+/* Style dla pogrubionej i większej czcionki */
+.bold-large-font {
+    font-weight: bold;
+    font-size: 1.1em; /* Zwiększenie czcionki o około 2px */
+}

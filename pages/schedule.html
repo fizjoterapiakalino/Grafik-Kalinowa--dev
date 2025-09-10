@@ -39,17 +39,23 @@
                 <label for="patientName">Imię i nazwisko:</label>
                 <input type="text" id="patientName" readonly>
             </div>
-            <div class="form-group">
-                <label for="treatmentStartDate">Data rozpoczęcia:</label>
-                <input type="date" id="treatmentStartDate">
-            </div>
-            <div class="form-group">
-                <label for="treatmentExtensionDays">Przedłużenie (dni):</label>
-                <input type="number" id="treatmentExtensionDays" min="0" value="0">
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="treatmentStartDate">Data rozpoczęcia:</label>
+                    <input type="date" id="treatmentStartDate">
+                </div>
+                <div class="form-group">
+                    <label for="treatmentExtensionDays">Przedłużenie (dni):</label>
+                    <input type="number" id="treatmentExtensionDays" min="0" value="0">
+                </div>
             </div>
             <div class="form-group">
                 <label for="treatmentEndDate">Data zakończenia:</label>
-                <input type="text" id="treatmentEndDate" readonly>
+                <input type="text" id="treatmentEndDate" readonly class="bold-large-font">
+            </div>
+            <div class="form-group">
+                <label for="additionalInfo">Informacje dodatkowe:</label>
+                <textarea id="additionalInfo" rows="3"></textarea>
             </div>
         </div>
         <div class="modal-actions">
