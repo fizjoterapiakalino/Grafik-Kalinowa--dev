@@ -35,9 +35,18 @@
     <div class="modal-content">
         <h2 class="modal-title">Informacje o pacjencie</h2>
         <div class="modal-body">
-            <div class="form-group">
+            <div class="form-group patient-name-row">
                 <label for="patientName">Imię i nazwisko:</label>
-                <input type="text" id="patientName" readonly>
+                <div class="name-input-wrapper">
+                    <input type="text" id="patientName" readonly>
+                    <div class="gender-options-inline">
+                        <input type="radio" id="genderMale" name="patientGender" value="male">
+                        <label for="genderMale">Pan</label>
+                        <input type="radio" id="genderFemale" name="patientGender" value="female">
+                        <label for="genderFemale">Pani</label>
+                    </div>
+                </div>
+                <span id="patientGenderIcon" class="gender-icon"></span>
             </div>
             <div class="form-row">
                 <div class="form-group">
@@ -65,7 +74,7 @@
     </div>
 </div>
 
-<div id="duplicateModal" class="modal" style="display: none;">
+<div id="duplicateModal" class="modal-overlay" style="display: none;">
     <div class="modal-content">
         <p id="duplicateModalText"></p>
         <div class="modal-buttons">
